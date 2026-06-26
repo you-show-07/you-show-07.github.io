@@ -167,6 +167,18 @@ const previewCanvas = document.querySelector("#previewMonster");
 const privacyLine = document.querySelector(".privacy-line");
 const privacyState = document.querySelector("#privacyState");
 const sortSelect = document.querySelector("#sortSelect");
+const authGate = document.querySelector("#authGate");
+const appShell = document.querySelector("#appShell");
+const createAccountForm = document.querySelector("#createAccountForm");
+const loginForm = document.querySelector("#loginForm");
+const authMessage = document.querySelector("#authMessage");
+const logoutButton = document.querySelector("#logoutButton");
+
+const CLOUD_ACCOUNT_KEY = "negaGuild.cloud.accounts.v1";
+const CLOUD_USER_PREFIX = "negaGuild.cloud.user.v1:";
+const CLOUD_LAST_USER_KEY = "negaGuild.cloud.lastUser.v1";
+let currentUser = null;
+let authFormsReady = false;
 
 function normalize(text) {
   return text.trim().replace(/\s+/g, " ");
@@ -452,6 +464,7 @@ function render() {
   renderLogs();
   renderStats();
   updatePreview();
+  saveUserData();
 }
 
 function renderFeed() {
@@ -484,6 +497,8 @@ function renderProfile() {
   document.querySelector("#heroLevel").textContent = level;
   document.querySelector("#heroXp").textContent = state.hero.xp;
   document.querySelector("#activeTitle").textContent = state.hero.title;
+  const heroName = document.querySelector("#heroName");
+  if (heroName) heroName.textContent = currentUser ? currentUser.username + "の浄化士" : "名無しの浄化士";
   document.querySelector("#xpBar").style.width = ratio + "%";
 
   const titlePicks = document.querySelector("#titlePicks");
@@ -496,6 +511,7 @@ function renderProfile() {
     button.addEventListener("click", function() {
       state.hero.title = title;
       renderProfile();
+      saveUserData();
       toast("称号を『" + title + "』に変更しました。");
     });
     titlePicks.append(button);
@@ -713,11 +729,293 @@ function escapeHtml(text) {
     .replaceAll("'", "&#039;");
 }
 
+
+function readCloudJson(key, fallback) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function writeCloudJson(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    setAuthMessage("保存領域に書き込めませんでした。ブラウザの保存設定を確認してください。", "error");
+  }
+}
+
+function cleanUsername(value) {
+  return normalize(value || "");
+}
+
+function accountIdFor(username) {
+  return cleanUsername(username).toLowerCase();
+}
+
+function userCloudKey(accountId) {
+  return CLOUD_USER_PREFIX + encodeURIComponent(accountId);
+}
+
+function getAccounts() {
+  return readCloudJson(CLOUD_ACCOUNT_KEY, {});
+}
+
+function storeAccounts(accounts) {
+  writeCloudJson(CLOUD_ACCOUNT_KEY, accounts);
+}
+
+async function hashPassword(username, password) {
+  const source = accountIdFor(username) + ":" + password;
+  if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+    const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+    return Array.from(new Uint8Array(digest)).map(function(byte) {
+      return byte.toString(16).padStart(2, "0");
+    }).join("");
+  }
+
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i += 1) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return "fallback-" + (hash >>> 0).toString(16);
+}
+
+function validateAuthInput(username, password) {
+  if (username.length < 2 || username.length > 24 || /\s/.test(username)) {
+    return "ユーザー名は2〜24文字、空白なしで入力してください。";
+  }
+  if (password.length < 4 || password.length > 48) {
+    return "パスワードは4〜48文字で入力してください。";
+  }
+  return "";
+}
+
+function setAuthMessage(message, type) {
+  if (!authMessage) return;
+  authMessage.textContent = message || "";
+  authMessage.classList.remove("success", "error");
+  if (type) authMessage.classList.add(type);
+}
+
+function freshHero() {
+  return {
+    xp: 1240,
+    hp: 100,
+    title: "満員電車を生き延びし見習い",
+    materials: 3
+  };
+}
+
+function freshTitles() {
+  return [
+    "満員電車を生き延びし見習い",
+    "日常を笑いに変える大賢者",
+    "低気圧に膝をつかぬ聖騎士",
+    "コメント欄の吟遊詩人"
+  ];
+}
+
+function freshLogs(username) {
+  return [
+    username + "のギルド帳が作成された。",
+    "ため息が経験値に変換された。"
+  ];
+}
+
+function seedSampleQuests() {
+  samples.forEach(function(item, index) {
+    const quest = buildMonster(item.rant, item.rage);
+    quest.author = item.author;
+    quest.createdAt = Date.now() - index * 540000;
+    quest.comments = index === 0 ? [{ text: "昨日の指示にもセーブポイント欲しい", damage: "-62", type: "critical" }] : [];
+    quest.hp = clamp(quest.hp - (index === 0 ? 62 : 0), 0, quest.maxHp);
+    state.quests.push(quest);
+  });
+}
+
+function normalizeQuestActions() {
+  state.quests.forEach(function(quest) {
+    if (!quest.usedActions) {
+      quest.usedActions = { empathy: false, cheer: false };
+    }
+  });
+}
+
+function resetStateForUser(username) {
+  state.filter = "all";
+  state.sort = "hot";
+  state.hero = freshHero();
+  state.titles = freshTitles();
+  state.quests = [];
+  state.raid = Object.assign({}, raids[0]);
+  state.logs = freshLogs(username);
+  seedSampleQuests();
+  normalizeQuestActions();
+}
+
+function applyUserData(data, username) {
+  if (!data) {
+    resetStateForUser(username);
+    return;
+  }
+  state.filter = "all";
+  state.sort = "hot";
+  state.hero = Object.assign(freshHero(), data.hero || {});
+  state.titles = Array.isArray(data.titles) && data.titles.length ? data.titles : freshTitles();
+  state.quests = Array.isArray(data.quests) ? data.quests : [];
+  state.raid = Object.assign({}, raids[0], data.raid || {});
+  state.logs = Array.isArray(data.logs) && data.logs.length ? data.logs : freshLogs(username);
+  if (!state.quests.length) seedSampleQuests();
+  normalizeQuestActions();
+}
+
+function loadUserData(account) {
+  const saved = readCloudJson(userCloudKey(account.id), null);
+  applyUserData(saved, account.username);
+}
+
+function snapshotUserData() {
+  return {
+    hero: state.hero,
+    titles: state.titles,
+    quests: state.quests,
+    raid: state.raid,
+    logs: state.logs,
+    savedAt: new Date().toISOString()
+  };
+}
+
+function saveUserData() {
+  if (!currentUser) return;
+  writeCloudJson(userCloudKey(currentUser.id), snapshotUserData());
+}
+
+function openGuild(account) {
+  currentUser = account;
+  window.localStorage.setItem(CLOUD_LAST_USER_KEY, account.username);
+  loadUserData(account);
+  authGate.hidden = true;
+  appShell.hidden = false;
+  const currentUserName = document.querySelector("#currentUserName");
+  if (currentUserName) currentUserName.textContent = account.username;
+  drawBrandSeal();
+  render();
+  toast(account.username + "でログインしました。");
+}
+
+function showAuthGate(message, type) {
+  currentUser = null;
+  appShell.hidden = true;
+  authGate.hidden = false;
+  const lastUser = window.localStorage.getItem(CLOUD_LAST_USER_KEY) || "";
+  const loginUsername = document.querySelector("#loginUsername");
+  if (loginUsername && lastUser) loginUsername.value = lastUser;
+  setAuthMessage(message || "ユーザー名とパスワードでギルド帳を開いてください。", type || "");
+  drawAuthSeal();
+}
+
+function drawAuthSeal() {
+  const canvas = document.querySelector("#authSeal");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 52, 52);
+  ctx.fillStyle = "#111217";
+  ctx.fillRect(0, 0, 52, 52);
+  ctx.strokeStyle = "#f6c85f";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(26, 26, 20, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#ef476f";
+  ctx.beginPath();
+  ctx.moveTo(26, 9);
+  ctx.lineTo(38, 35);
+  ctx.lineTo(14, 35);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#2fd6b5";
+  ctx.fillRect(22, 20, 8, 22);
+}
+
+function setupAuthForms() {
+  if (authFormsReady) return;
+  authFormsReady = true;
+
+  createAccountForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+    const username = cleanUsername(document.querySelector("#createUsername").value);
+    const password = document.querySelector("#createPassword").value;
+    const validation = validateAuthInput(username, password);
+    if (validation) {
+      setAuthMessage(validation, "error");
+      return;
+    }
+
+    const accountId = accountIdFor(username);
+    const accounts = getAccounts();
+    if (accounts[accountId]) {
+      setAuthMessage("そのユーザー名はすでに使われています。ログインしてください。", "error");
+      return;
+    }
+
+    accounts[accountId] = {
+      id: accountId,
+      username: username,
+      passwordHash: await hashPassword(username, password),
+      createdAt: new Date().toISOString()
+    };
+    storeAccounts(accounts);
+    currentUser = { id: accountId, username: username };
+    resetStateForUser(username);
+    saveUserData();
+    setAuthMessage("アカウントを作成しました。", "success");
+    openGuild(currentUser);
+    createAccountForm.reset();
+  });
+
+  loginForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+    const username = cleanUsername(document.querySelector("#loginUsername").value);
+    const password = document.querySelector("#loginPassword").value;
+    const validation = validateAuthInput(username, password);
+    if (validation) {
+      setAuthMessage(validation, "error");
+      return;
+    }
+
+    const accountId = accountIdFor(username);
+    const account = getAccounts()[accountId];
+    const passwordHash = await hashPassword(username, password);
+    if (!account || account.passwordHash !== passwordHash) {
+      setAuthMessage("ユーザー名またはパスワードが違います。", "error");
+      return;
+    }
+
+    setAuthMessage("ログインしました。", "success");
+    openGuild({ id: accountId, username: account.username });
+    loginForm.reset();
+  });
+
+  logoutButton.addEventListener("click", function() {
+    saveUserData();
+    showAuthGate("ログアウトしました。", "success");
+  });
+}
+
+function initializeAuth() {
+  setupAuthForms();
+  showAuthGate();
+}
+
 summonForm.addEventListener("submit", function(event) {
   event.preventDefault();
   const text = normalize(rantInput.value);
   if (!text) return;
-  summon(text, Number(rageInput.value), "あなた");
+  summon(text, Number(rageInput.value), currentUser ? currentUser.username : "あなた");
   rantInput.value = "";
   updatePreview();
   toast("ギルド掲示板に魔物が流れました。");
@@ -739,14 +1037,4 @@ document.querySelectorAll(".tab").forEach(function(tab) {
   });
 });
 
-samples.forEach(function(item, index) {
-  const quest = buildMonster(item.rant, item.rage);
-  quest.author = item.author;
-  quest.createdAt = Date.now() - index * 540000;
-  quest.comments = index === 0 ? [{ text: "昨日の指示にもセーブポイント欲しい", damage: "-62", type: "critical" }] : [];
-  quest.hp = clamp(quest.hp - (index === 0 ? 62 : 0), 0, quest.maxHp);
-  state.quests.push(quest);
-});
-
-drawBrandSeal();
-render();
+initializeAuth();

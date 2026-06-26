@@ -7,7 +7,51 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="authGate" class="auth-gate" aria-label="アカウント入口">
+      <div class="auth-shell">
+        <div class="auth-brand">
+          <canvas id="authSeal" width="52" height="52" aria-hidden="true"></canvas>
+          <div>
+            <h1>ネガギルド</h1>
+            <p>ギルド帳を開く</p>
+          </div>
+        </div>
+
+        <div class="auth-forms">
+          <section class="auth-panel">
+            <div class="panel-heading">
+              <span class="eyebrow">Create</span>
+              <h2>アカウント作成</h2>
+            </div>
+            <form id="createAccountForm" class="auth-form">
+              <label for="createUsername">ユーザー名</label>
+              <input id="createUsername" name="username" type="text" maxlength="24" autocomplete="username" required />
+              <label for="createPassword">パスワード</label>
+              <input id="createPassword" name="password" type="password" minlength="4" maxlength="48" autocomplete="new-password" required />
+              <button class="primary-action" type="submit">冒険を始める</button>
+            </form>
+          </section>
+
+          <section class="auth-panel">
+            <div class="panel-heading">
+              <span class="eyebrow">Login</span>
+              <h2>ログイン</h2>
+            </div>
+            <form id="loginForm" class="auth-form">
+              <label for="loginUsername">ユーザー名</label>
+              <input id="loginUsername" name="username" type="text" maxlength="24" autocomplete="username" required />
+              <label for="loginPassword">パスワード</label>
+              <input id="loginPassword" name="password" type="password" maxlength="48" autocomplete="current-password" required />
+              <button class="primary-action" type="submit">ギルドへ入る</button>
+            </form>
+          </section>
+        </div>
+
+        <p id="authMessage" class="auth-message" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
       <header class="topbar">
         <div class="brand">
           <canvas id="brandSeal" width="44" height="44" aria-hidden="true"></canvas>
@@ -24,6 +68,8 @@
         <div class="status-strip" aria-label="ギルド状況">
           <span><strong id="guildHeat">82</strong> 熱量</span>
           <span><strong id="activeCount">0</strong> 体出現中</span>
+          <span><strong id="currentUserName">未ログイン</strong></span>
+          <button id="logoutButton" class="logout-button" type="button">ログアウト</button>
         </div>
       </header>
 
@@ -100,7 +146,7 @@
               <canvas id="heroPortrait" width="76" height="76" aria-label="英雄プロフィール"></canvas>
               <div>
                 <span class="eyebrow">Hero</span>
-                <h2>名無しの浄化士</h2>
+                <h2 id="heroName">名無しの浄化士</h2>
                 <p id="activeTitle">満員電車を生き延びし見習い</p>
               </div>
             </div>

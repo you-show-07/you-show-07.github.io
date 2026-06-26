@@ -30,6 +30,87 @@ body {
 }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
+
+[hidden] { display: none !important; }
+.auth-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.auth-shell {
+  width: min(980px, 100%);
+  display: grid;
+  gap: 16px;
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(24, 25, 31, 0.94);
+  box-shadow: var(--shadow);
+}
+.auth-brand h1,
+.auth-brand p { margin: 0; }
+.auth-brand h1 { font-size: clamp(1.35rem, 2vw, 1.8rem); letter-spacing: 0; }
+.auth-brand p { color: var(--muted); font-size: 0.86rem; }
+.auth-forms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.auth-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(34, 36, 43, 0.94);
+  box-shadow: var(--shadow);
+}
+.auth-form {
+  display: grid;
+  gap: 11px;
+  margin-top: 16px;
+}
+.auth-form input {
+  min-height: 44px;
+  padding: 0 12px;
+}
+.auth-form button {
+  margin-top: 4px;
+}
+.auth-message {
+  min-height: 42px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(24, 25, 31, 0.86);
+}
+.auth-message.success {
+  border-color: rgba(47, 214, 181, 0.52);
+  color: var(--ink);
+}
+.auth-message.error {
+  border-color: rgba(239, 71, 111, 0.62);
+  color: var(--ink);
+}
+.logout-button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #181a20;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.logout-button:hover { border-color: var(--gold); }
+
 .app-shell { width: min(1640px, 100%); margin: 0 auto; padding: 18px; }
 .topbar {
   position: sticky;
@@ -148,6 +229,7 @@ input[type="range"] { accent-color: var(--ember); }
   .side-column { position: static; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
+  .auth-forms { grid-template-columns: 1fr; }
   .app-shell { padding: 10px; }
   .topbar { position: static; }
   .tabs, .status-strip { overflow-x: auto; }
